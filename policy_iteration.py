@@ -4,10 +4,20 @@ Author: Vadym Barda vadim.barda@gmail.com
 """
 
 from collections import defaultdict
-import enum
 from typing import Dict, List, Tuple, Set
 
 import funcy
+
+from typedefs import (
+    Action,
+    GridState,
+    Policy,
+    Rewards,
+    StateActionSuccessorState,
+    StateEvaluator,
+    TransitionProbabilities,
+    ValueFunction,
+)
 
 
 # Constants
@@ -15,31 +25,6 @@ import funcy
 MAX_ITERATIONS = 10000
 GAMMA = 1
 EPSILON = 1e-5
-
-
-class Action(enum.Enum):
-    """Actions that an agent can take in a gridworld."""
-
-    UP = enum.auto()
-    DOWN = enum.auto()
-    LEFT = enum.auto()
-    RIGHT = enum.auto()
-
-
-# Types
-
-# position on a grid
-GridState = Tuple[int, int]
-# (s, a, s') triple
-StateActionSuccessorState = Tuple[GridState, Action, GridState]
-# probabilities of taking an action from a particular grid state
-Policy = Dict[GridState, Dict[Action, float]]
-# transition probabilities
-TransitionProbabilities = Dict[StateActionSuccessorState, float]
-# rewards
-Rewards = Dict[StateActionSuccessorState, float]
-# value function
-ValueFunction = Dict[GridState, float]
 
 
 def get_states(grid_size: int) -> List[GridState]:
@@ -192,21 +177,21 @@ def calculate_state_value(
     return state_value
 
 
-def evaluate_policy(
+def compute_value_function(
     policy: Policy,
     rewards: Rewards,
     transition_probabilities: TransitionProbabilities,
     grid_size: int,
     terminal_states: Set[GridState],
+    state_evaluator: StateEvaluator,
     gamma: float = GAMMA,
     update_inplace: bool = True,
     max_k: int = None,
     epsilon: float = EPSILON,
     round_end_values: int = None,
 ) -> ValueFunction:
-    """Evaluate a policy & produce a value function."""
+    """Compute value function."""
     states = get_states(grid_size)
-
     # initialize value function with 0 value for each state
     previous_values = {state: 0.0 for state in states}
     # if we update value function in-place, re-use initialized values
@@ -237,7 +222,7 @@ def evaluate_policy(
                 values_from_previous_iteration = previous_values
 
             previous_state_value = values_from_previous_iteration[state]
-            state_value = calculate_state_value(
+            state_value = state_evaluator(
                 state,
                 values_from_previous_iteration,
                 policy,
@@ -273,6 +258,12 @@ def evaluate_policy(
         return funcy.walk_values(funcy.partial(round, ndigits=round_end_values), values)
 
     return values
+
+
+# this is done for naming clarity and to better follow the policy iteration algorithm below
+evaluate_policy = funcy.partial(
+    compute_value_function, state_evaluator=calculate_state_value
+)
 
 
 def compute_greedy_policy(
@@ -325,7 +316,7 @@ def compute_greedy_policy(
 # policy iteration
 
 
-def improve_policy(
+def run_policy_iteration(
     policy: Policy,
     rewards: Rewards,
     transition_probabilities: TransitionProbabilities,
